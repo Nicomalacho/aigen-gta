@@ -93,19 +93,20 @@ describe('WebSocket Server', () => {
       });
     });
 
-    it('should reject connection without token', async () => {
-      // Arrange
-      let errorReceived = false;
-      
-      // Act
-      // clientSocket = ioClient('http://localhost:3001');
-      // clientSocket.on('connect_error', (err) => {
-      //   errorReceived = true;
-      //   expect(err.message).toContain('Authentication required');
-      // });
+    it('should reject connection without token', (done) => {
+      // Act - connect without providing a token
+      clientSocket = ioClient(`http://localhost:${TEST_PORT}`);
       
       // Assert
-      expect(true).toBe(false); // Force fail - RED PHASE
+      clientSocket.on('connect', () => {
+        done.fail('Should not connect without token');
+      });
+      
+      clientSocket.on('connect_error', (err: any) => {
+        expect(err.message).toContain('Authentication required');
+        expect(clientSocket!.connected).toBe(false);
+        done();
+      });
     });
   });
 
