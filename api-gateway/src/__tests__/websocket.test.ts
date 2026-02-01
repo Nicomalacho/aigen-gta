@@ -372,19 +372,31 @@ describe('WebSocket Server', () => {
   });
 
   describe('Heartbeat', () => {
-    it('should respond to ping with pong', async () => {
+    it('should respond to ping with pong', (done) => {
       // Arrange
-      let pongReceived = false;
+      const validToken = jwt.sign(
+        { userId: 'user-123', steamId: 'steam-456', tier: 'starter' },
+        JWT_SECRET
+      );
       
       // Act
-      // await connectWithValidToken();
-      // clientSocket.emit('PING');
-      // clientSocket.on('PONG', () => pongReceived = true);
-      // await waitFor(100);
+      clientSocket = ioClient(`http://localhost:${TEST_PORT}`, {
+        auth: { token: validToken }
+      });
       
-      // Assert
-      expect(true).toBe(false); // Force fail - RED PHASE
-      // expect(pongReceived).toBe(true);
+      clientSocket.on('connect', () => {
+        // Send ping
+        clientSocket!.emit('PING');
+      });
+      
+      clientSocket.on('PONG', () => {
+        // Assert
+        done();
+      });
+      
+      clientSocket.on('connect_error', (err: any) => {
+        done(new Error(`Connection failed: ${err.message}`));
+      });
     });
 
     it('should disconnect client not responding to ping', async () => {

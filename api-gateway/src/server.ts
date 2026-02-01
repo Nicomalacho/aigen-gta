@@ -147,6 +147,11 @@ export function createServer(options: ServerOptions = {}): ServerInstance {
       });
     });
 
+    // Handle ping (heartbeat)
+    socket.on('PING', () => {
+      socket.emit('PONG');
+    });
+
     // Handle disconnection
     socket.on('disconnect', () => {
       console.log(`Client disconnected: ${socket.id}`);
