@@ -28,7 +28,12 @@ export interface ServerInstance {
   io: SocketIOServer;
 }
 
-export function createServer(): ServerInstance {
+export interface ServerOptions {
+  rateLimitWindow?: number; // seconds
+}
+
+export function createServer(options: ServerOptions = {}): ServerInstance {
+  const rateLimitWindow = options.rateLimitWindow || RATE_LIMIT_WINDOW;
   const app = express();
   const httpServer = createHttpServer(app);
   
@@ -49,7 +54,7 @@ export function createServer(): ServerInstance {
   
   function checkRateLimit(userId: string): { allowed: boolean; remaining: number; resetTime: number } {
     const now = Date.now();
-    const windowMs = RATE_LIMIT_WINDOW * 1000;
+    const windowMs = rateLimitWindow * 1000;
     
     let userLimit = rateLimiter.get(userId);
     

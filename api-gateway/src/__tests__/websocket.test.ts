@@ -15,13 +15,13 @@ describe('WebSocket Server', () => {
   let server: any;
 
   beforeAll((done) => {
-    // Setup test server
-    const serverInstance = createServer();
+    // Setup test server with shorter rate limit window for testing (2 seconds)
+    const serverInstance = createServer({ rateLimitWindow: 2 });
     httpServer = serverInstance.httpServer;
     io = serverInstance.io;
     
     httpServer.listen(TEST_PORT, () => {
-      console.log(`Test server running on port ${TEST_PORT}`);
+      console.log(`Test server running on port ${TEST_PORT} (rate limit window: 2s)`);
       done();
     });
   });
@@ -314,18 +314,61 @@ describe('WebSocket Server', () => {
       });
     }, 10000); // 10 second timeout for this test
 
-    it('should reset rate limit after 60 seconds', async () => {
-      // Arrange
-      // Send 100 messages
-      // Wait 60 seconds
+    it('should reset rate limit after 60 seconds', (done) => {
+      // Arrange - use unique user
+      const validToken = jwt.sign(
+        { userId: `user-reset-test-${Date.now()}`, steamId: 'steam-456', tier: 'starter' },
+        JWT_SECRET
+      );
+      
+      const message = {
+        type: 'CHARACTER_CHAT',
+        characterId: 'char-123',
+        message: 'Test message'
+      };
+      
+      let messagesAccepted = 0;
+      let testPhase = 'sending'; // 'sending', 'waiting', 'testing'
       
       // Act
-      // Try to send another message
+      clientSocket = ioClient(`http://localhost:${TEST_PORT}`, {
+        auth: { token: validToken }
+      });
       
-      // Assert
-      expect(true).toBe(false); // Force fail - RED PHASE
-      // Message should be accepted
-    });
+      const sendInitialMessages = () => {
+        // Send 100 messages to hit rate limit
+        for (let i = 0; i < 100; i++) {
+          clientSocket!.emit('CHARACTER_CHAT', { ...message, index: i }, (ack: any) => {
+            if (ack.received) {
+              messagesAccepted++;
+            }
+            
+            if (messagesAccepted === 100) {
+              // All 100 messages accepted, now wait 60 seconds
+              testPhase = 'waiting';
+              console.log('Rate limit test: Waiting 60 seconds for window to reset...');
+              
+              setTimeout(() => {
+                // After rate limit window (2s), try sending another message
+                testPhase = 'testing';
+                clientSocket!.emit('CHARACTER_CHAT', { ...message, phase: 'after-wait' }, (ack: any) => {
+                  // Assert - message should be accepted after rate limit reset
+                  expect(ack.received).toBe(true);
+                  expect(ack.error).toBeUndefined();
+                  done();
+                });
+              }, 2500); // Wait 2.5 seconds (slightly more than 2s window)
+            }
+          });
+        }
+      };
+      
+      clientSocket.on('connect', sendInitialMessages);
+      
+      clientSocket.on('connect_error', (err: any) => {
+        done(new Error(`Connection failed: ${err.message}`));
+      });
+    }, 10000); // 10 second timeout (2.5s wait + buffer)
   });
 
   describe('Heartbeat', () => {
