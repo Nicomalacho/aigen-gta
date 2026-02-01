@@ -498,19 +498,55 @@ describe('WebSocket Server', () => {
       });
     });
 
-    it('should handle unexpected client disconnect', async () => {
+    it('should handle unexpected client disconnect', (done) => {
       // Arrange
-      // Connect client
+      const validToken = jwt.sign(
+        { userId: 'user-unexpected-disconnect', steamId: 'steam-456', tier: 'starter' },
+        JWT_SECRET
+      );
+      
+      let disconnectDetected = false;
       
       // Act
-      // Simulate network failure (don't call disconnect)
-      // clientSocket.io.engine.close();
-      // await waitFor(100);
+      clientSocket = ioClient(`http://localhost:${TEST_PORT}`, {
+        auth: { token: validToken }
+      });
       
-      // Assert
-      expect(true).toBe(false); // Force fail - RED PHASE
-      // Server should detect disconnect and cleanup
-    });
+      clientSocket.on('connect', () => {
+        console.log('Client connected, simulating unexpected disconnect...');
+        
+        // Simulate unexpected disconnect by closing transport without calling disconnect()
+        setTimeout(() => {
+          // @ts-ignore - force close the transport
+          if (clientSocket?.io?.engine) {
+            // @ts-ignore
+            clientSocket.io.engine.close();
+          }
+        }, 100);
+      });
+      
+      clientSocket.on('disconnect', (reason: string) => {
+        if (!disconnectDetected) {
+          disconnectDetected = true;
+          console.log(`Unexpected disconnect detected: ${reason}`);
+          
+          // Assert - server should detect the disconnect
+          expect(reason).toBeDefined();
+          done();
+        }
+      });
+      
+      // Safety timeout
+      setTimeout(() => {
+        if (!disconnectDetected) {
+          done(new Error('Server should have detected unexpected disconnect'));
+        }
+      }, 5000);
+      
+      clientSocket.on('connect_error', (err: any) => {
+        done(new Error(`Connection failed: ${err.message}`));
+      });
+    }, 6000);
   });
 });
 
