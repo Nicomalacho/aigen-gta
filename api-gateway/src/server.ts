@@ -66,6 +66,35 @@ export function createServer(): ServerInstance {
       connected: true,
     });
 
+    // Handle CHARACTER_CHAT messages
+    socket.on('CHARACTER_CHAT', (data: any, callback?: (ack: any) => void) => {
+      console.log(`Received CHARACTER_CHAT from ${socket.user?.userId}:`, data);
+      
+      // Validate message format
+      if (!data.characterId || !data.message) {
+        const error = { error: 'Invalid message format', code: 'INVALID_FORMAT' };
+        if (callback) callback(error);
+        socket.emit('ERROR', error);
+        return;
+      }
+      
+      // Acknowledge receipt
+      const ack = { 
+        received: true, 
+        messageId: data.messageId || `msg-${Date.now()}`,
+        timestamp: new Date().toISOString()
+      };
+      
+      if (callback) callback(ack);
+      
+      // Echo back for testing (in real implementation, this would route to AI worker)
+      socket.emit('CHARACTER_RESPONSE', {
+        characterId: data.characterId,
+        response: `Echo: ${data.message}`,
+        timestamp: new Date().toISOString()
+      });
+    });
+
     // Handle disconnection
     socket.on('disconnect', () => {
       console.log(`Client disconnected: ${socket.id}`);

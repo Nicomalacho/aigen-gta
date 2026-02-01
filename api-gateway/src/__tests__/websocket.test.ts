@@ -111,8 +111,13 @@ describe('WebSocket Server', () => {
   });
 
   describe('Message Handling', () => {
-    it('should route CHARACTER_CHAT messages to handler', async () => {
+    it('should route CHARACTER_CHAT messages to handler', (done) => {
       // Arrange
+      const validToken = jwt.sign(
+        { userId: 'user-123', steamId: 'steam-456', tier: 'starter' },
+        JWT_SECRET
+      );
+      
       const message = {
         type: 'CHARACTER_CHAT',
         characterId: 'char-123',
@@ -120,13 +125,22 @@ describe('WebSocket Server', () => {
       };
       
       // Act
-      // await connectWithValidToken();
-      // clientSocket.emit('CHARACTER_CHAT', message);
-      // await waitFor(100);
+      clientSocket = ioClient(`http://localhost:${TEST_PORT}`, {
+        auth: { token: validToken }
+      });
       
-      // Assert
-      expect(true).toBe(false); // Force fail - RED PHASE
-      // expect(mockCharacterHandler.handleChat).toHaveBeenCalledWith(message);
+      clientSocket.on('connect', () => {
+        clientSocket!.emit('CHARACTER_CHAT', message, (ack: any) => {
+          // Assert
+          expect(ack.received).toBe(true);
+          expect(ack.messageId).toBeDefined();
+          done();
+        });
+      });
+      
+      clientSocket.on('connect_error', (err: any) => {
+        done.fail(`Connection failed: ${err.message}`);
+      });
     });
 
     it('should validate message format before routing', async () => {
