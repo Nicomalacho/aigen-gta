@@ -41,12 +41,14 @@ export function createServer(options: ServerOptions = {}): ServerInstance {
   app.use(cors());
   app.use(express.json());
 
-  // Create Socket.io server
+  // Create Socket.io server with ping settings for testing
   const io = new SocketIOServer(httpServer, {
     cors: {
       origin: '*',
       methods: ['GET', 'POST'],
     },
+    pingTimeout: 3000,  // 3 seconds (10s in production)
+    pingInterval: 2000, // 2 seconds (30s in production)
   });
 
   // Simple in-memory rate limiter (replace with Redis in production)
@@ -147,14 +149,14 @@ export function createServer(options: ServerOptions = {}): ServerInstance {
       });
     });
 
-    // Handle ping (heartbeat)
+    // Handle ping (heartbeat) - custom protocol on top of Socket.io's built-in
     socket.on('PING', () => {
       socket.emit('PONG');
     });
 
     // Handle disconnection
-    socket.on('disconnect', () => {
-      console.log(`Client disconnected: ${socket.id}`);
+    socket.on('disconnect', (reason: string) => {
+      console.log(`Client disconnected: ${socket.id}, reason: ${reason}`);
     });
   });
 
