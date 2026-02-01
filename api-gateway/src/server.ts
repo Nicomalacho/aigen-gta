@@ -1,30 +1,38 @@
 import express from 'express';
-import { createServer } from 'http';
-import { Server } from 'socket.io';
+import { createServer as createHttpServer, Server as HttpServer } from 'http';
+import { Server as SocketIOServer, Socket } from 'socket.io';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 
 // JWT Secret (in production, use environment variable)
 const JWT_SECRET = process.env.JWT_SECRET || 'test-secret-key';
 
-export interface AuthenticatedSocket extends Socket {
-  user?: {
-    userId: string;
-    steamId: string;
-    tier: string;
-  };
+export interface UserData {
+  userId: string;
+  steamId: string;
+  tier: string;
 }
 
-export function createServer() {
+export interface AuthenticatedSocket extends Socket {
+  user?: UserData;
+}
+
+export interface ServerInstance {
+  app: express.Application;
+  httpServer: HttpServer;
+  io: SocketIOServer;
+}
+
+export function createServer(): ServerInstance {
   const app = express();
-  const httpServer = createServer(app);
+  const httpServer = createHttpServer(app);
   
   // Enable CORS
   app.use(cors());
   app.use(express.json());
 
   // Create Socket.io server
-  const io = new Server(httpServer, {
+  const io = new SocketIOServer(httpServer, {
     cors: {
       origin: '*',
       methods: ['GET', 'POST'],
@@ -32,7 +40,7 @@ export function createServer() {
   });
 
   // Authentication middleware for Socket.io
-  io.use((socket: AuthenticatedSocket, next) => {
+  io.use((socket: AuthenticatedSocket, next: (err?: Error) => void) => {
     const token = socket.handshake.auth.token;
     
     if (!token) {
@@ -40,7 +48,7 @@ export function createServer() {
     }
 
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      const decoded = jwt.verify(token, JWT_SECRET) as UserData;
       socket.user = decoded;
       next();
     } catch (err) {
