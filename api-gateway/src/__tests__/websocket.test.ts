@@ -1,48 +1,75 @@
-const request = require('supertest');
-const { createServer } = require('../server');
-const { Server } = require('socket.io');
-const { createServer: createHttpServer } = require('http');
+import ioClient from 'socket.io-client';
+import jwt from 'jsonwebtoken';
+import { createServer } from '../server';
+import { Server as HttpServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
+import { Socket } from 'socket.io-client';
+
+const JWT_SECRET = 'test-secret-key';
+const TEST_PORT = 3001;
 
 describe('WebSocket Server', () => {
-  let app;
-  let httpServer;
-  let io;
-  let clientSocket;
+  let httpServer: HttpServer;
+  let io: SocketIOServer;
+  let clientSocket: Socket | null;
+  let server: any;
 
   beforeAll((done) => {
-    // TODO: Setup test server
-    // httpServer = createHttpServer();
- // io = new Server(httpServer);
-    // app = createServer(io);
-    // httpServer.listen(3001, done);
-    done();
+    // Setup test server
+    const serverInstance = createServer();
+    httpServer = serverInstance.httpServer;
+    io = serverInstance.io;
+    
+    httpServer.listen(TEST_PORT, () => {
+      console.log(`Test server running on port ${TEST_PORT}`);
+      done();
+    });
   });
 
-  afterAll(() => {
-    // TODO: Cleanup
-    // io.close();
-    // httpServer.close();
+  afterAll((done) => {
+    // Cleanup
+    if (clientSocket) {
+      clientSocket.close();
+    }
+    io.close();
+    httpServer.close(done);
   });
 
   beforeEach(() => {
-    // TODO: Reset state between tests
+    // Reset state between tests
+    if (clientSocket) {
+      clientSocket.close();
+      clientSocket = null;
+    }
   });
 
   describe('Connection', () => {
-    it('should accept connection with valid JWT', async () => {
+    it('should accept connection with valid JWT', (done) => {
       // Arrange
-      const validToken = 'valid_jwt_token';
+      const validToken = jwt.sign(
+        { userId: 'user-123', steamId: 'steam-456', tier: 'starter' },
+        JWT_SECRET
+      );
       
       // Act
-      // clientSocket = ioClient('http://localhost:3001', {
-      //   auth: { token: validToken }
-      // });
-      // await waitForConnect(clientSocket);
+      clientSocket = ioClient(`http://localhost:${TEST_PORT}`, {
+        auth: { token: validToken }
+      });
       
       // Assert
-      expect(true).toBe(false); // Force fail - RED PHASE
-      // expect(clientSocket.connected).toBe(true);
-      // expect(mockAuthService.validateToken).toHaveBeenCalledWith(validToken);
+      clientSocket.on('connect', () => {
+        expect(clientSocket!.connected).toBe(true);
+      });
+      
+      clientSocket.on('AUTH_SUCCESS', (data: any) => {
+        expect(data.userId).toBe('user-123');
+        expect(data.connected).toBe(true);
+        done();
+      });
+      
+      clientSocket.on('connect_error', (err: any) => {
+        done.fail(`Connection failed: ${err.message}`);
+      });
     });
 
     it('should reject connection with invalid JWT', async () => {
@@ -247,7 +274,7 @@ describe('WebSocket Server', () => {
 });
 
 // Helper functions
-async function waitFor(ms) {
+async function waitFor(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
