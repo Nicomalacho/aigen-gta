@@ -3,9 +3,14 @@ import { createServer as createHttpServer, Server as HttpServer } from 'http';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
+import Redis from 'ioredis';
 
 // JWT Secret (in production, use environment variable)
 const JWT_SECRET = process.env.JWT_SECRET || 'test-secret-key';
+
+// Rate limiting config
+const RATE_LIMIT_MAX = 100; // messages per window
+const RATE_LIMIT_WINDOW = 60; // seconds
 
 export interface UserData {
   userId: string;
@@ -39,6 +44,30 @@ export function createServer(): ServerInstance {
     },
   });
 
+  // Simple in-memory rate limiter (replace with Redis in production)
+  const rateLimiter = new Map<string, { count: number; resetTime: number }>();
+  
+  function checkRateLimit(userId: string): { allowed: boolean; remaining: number; resetTime: number } {
+    const now = Date.now();
+    const windowMs = RATE_LIMIT_WINDOW * 1000;
+    
+    let userLimit = rateLimiter.get(userId);
+    
+    if (!userLimit || now > userLimit.resetTime) {
+      // New window
+      userLimit = { count: 1, resetTime: now + windowMs };
+      rateLimiter.set(userId, userLimit);
+      return { allowed: true, remaining: RATE_LIMIT_MAX - 1, resetTime: userLimit.resetTime };
+    }
+    
+    if (userLimit.count >= RATE_LIMIT_MAX) {
+      return { allowed: false, remaining: 0, resetTime: userLimit.resetTime };
+    }
+    
+    userLimit.count++;
+    return { allowed: true, remaining: RATE_LIMIT_MAX - userLimit.count, resetTime: userLimit.resetTime };
+  }
+
   // Authentication middleware for Socket.io
   io.use((socket: AuthenticatedSocket, next: (err?: Error) => void) => {
     const token = socket.handshake.auth.token;
@@ -68,7 +97,21 @@ export function createServer(): ServerInstance {
 
     // Handle CHARACTER_CHAT messages
     socket.on('CHARACTER_CHAT', (data: any, callback?: (ack: any) => void) => {
-      console.log(`Received CHARACTER_CHAT from ${socket.user?.userId}:`, data);
+      const userId = socket.user?.userId || 'anonymous';
+      console.log(`Received CHARACTER_CHAT from ${userId}:`, data);
+      
+      // Check rate limit
+      const rateLimit = checkRateLimit(userId);
+      if (!rateLimit.allowed) {
+        const error = { 
+          error: 'Rate limit exceeded', 
+          code: 'RATE_LIMIT_EXCEEDED',
+          retryAfter: Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
+        };
+        if (callback) callback(error);
+        socket.emit('ERROR', error);
+        return;
+      }
       
       // Validate message format
       if (!data.characterId || !data.message) {
@@ -82,7 +125,11 @@ export function createServer(): ServerInstance {
       const ack = { 
         received: true, 
         messageId: data.messageId || `msg-${Date.now()}`,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        rateLimit: {
+          remaining: rateLimit.remaining,
+          resetTime: rateLimit.resetTime
+        }
       };
       
       if (callback) callback(ack);

@@ -201,37 +201,91 @@ describe('WebSocket Server', () => {
   });
 
   describe('Rate Limiting', () => {
-    it('should allow 100 messages per minute', async () => {
+    it('should track rate limit in acknowledgment', (done) => {
       // Arrange
-      const messages = Array(100).fill({ type: 'TEST' });
+      const validToken = jwt.sign(
+        { userId: 'user-123', steamId: 'steam-456', tier: 'starter' },
+        JWT_SECRET
+      );
+      
+      const message = {
+        type: 'CHARACTER_CHAT',
+        characterId: 'char-123',
+        message: 'Test message'
+      };
       
       // Act
-      // await connectWithValidToken();
-      // messages.forEach(msg => clientSocket.emit('TEST', msg));
+      clientSocket = ioClient(`http://localhost:${TEST_PORT}`, {
+        auth: { token: validToken }
+      });
       
-      // Assert
-      expect(true).toBe(false); // Force fail - RED PHASE
-      // All 100 should be accepted
+      clientSocket.on('connect', () => {
+        clientSocket!.emit('CHARACTER_CHAT', message, (ack: any) => {
+          // Assert
+          expect(ack.received).toBe(true);
+          expect(ack.rateLimit).toBeDefined();
+          expect(ack.rateLimit.remaining).toBeLessThan(100);
+          expect(ack.rateLimit.resetTime).toBeDefined();
+          done();
+        });
+      });
+      
+      clientSocket.on('connect_error', (err: any) => {
+        done.fail(`Connection failed: ${err.message}`);
+      });
     });
 
-    it('should reject messages beyond rate limit', async () => {
-      // Arrange
-      const messages = Array(101).fill({ type: 'TEST' });
-      let rateLimitError = false;
+    it('should reject messages beyond rate limit', (done) => {
+      // Arrange - use a unique user to ensure fresh rate limit window
+      const validToken = jwt.sign(
+        { userId: `user-rate-limit-${Date.now()}`, steamId: 'steam-456', tier: 'starter' },
+        JWT_SECRET
+      );
+      
+      const message = {
+        type: 'CHARACTER_CHAT',
+        characterId: 'char-123',
+        message: 'Test message'
+      };
+      
+      let rateLimitErrorReceived = false;
+      let messagesSent = 0;
+      const MAX_MESSAGES = 101;
       
       // Act
-      // await connectWithValidToken();
-      // messages.forEach((msg, i) => {
-      //   clientSocket.emit('TEST', msg, (ack) => {
-      //     if (i === 100 && ack.error === 'RATE_LIMIT_EXCEEDED') {
-      //       rateLimitError = true;
-      //     }
-      //   });
-      // });
+      clientSocket = ioClient(`http://localhost:${TEST_PORT}`, {
+        auth: { token: validToken }
+      });
       
-      // Assert
-      expect(true).toBe(false); // Force fail - RED PHASE
-      // expect(rateLimitError).toBe(true);
+      const sendMessages = () => {
+        for (let i = 0; i < MAX_MESSAGES; i++) {
+          clientSocket!.emit('CHARACTER_CHAT', { ...message, index: i }, (ack: any) => {
+            messagesSent++;
+            
+            if (ack.error === 'RATE_LIMIT_EXCEEDED') {
+              rateLimitErrorReceived = true;
+            }
+            
+            if (messagesSent === MAX_MESSAGES) {
+              // Assert
+              expect(rateLimitErrorReceived).toBe(true);
+              done();
+            }
+          });
+        }
+      };
+      
+      clientSocket.on('connect', sendMessages);
+      
+      clientSocket.on('ERROR', (err: any) => {
+        if (err.error === 'RATE_LIMIT_EXCEEDED') {
+          rateLimitErrorReceived = true;
+        }
+      });
+      
+      clientSocket.on('connect_error', (err: any) => {
+        done.fail(`Connection failed: ${err.message}`);
+      });
     });
 
     it('should reset rate limit after 60 seconds', async () => {
