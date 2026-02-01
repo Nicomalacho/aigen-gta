@@ -72,22 +72,25 @@ describe('WebSocket Server', () => {
       });
     });
 
-    it('should reject connection with invalid JWT', async () => {
+    it('should reject connection with invalid JWT', (done) => {
       // Arrange
       const invalidToken = 'invalid_token';
-      let errorReceived = false;
       
       // Act
-      // clientSocket = ioClient('http://localhost:3001', {
-      //   auth: { token: invalidToken }
-      // });
-      // clientSocket.on('connect_error', () => errorReceived = true);
-      // await waitFor(100);
+      clientSocket = ioClient(`http://localhost:${TEST_PORT}`, {
+        auth: { token: invalidToken }
+      });
       
       // Assert
-      expect(true).toBe(false); // Force fail - RED PHASE
-      // expect(errorReceived).toBe(true);
-      // expect(clientSocket.connected).toBe(false);
+      clientSocket.on('connect', () => {
+        done.fail('Should not connect with invalid token');
+      });
+      
+      clientSocket.on('connect_error', (err: any) => {
+        expect(err.message).toContain('Authentication failed');
+        expect(clientSocket!.connected).toBe(false);
+        done();
+      });
     });
 
     it('should reject connection without token', async () => {
