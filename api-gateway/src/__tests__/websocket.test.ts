@@ -143,22 +143,40 @@ describe('WebSocket Server', () => {
       });
     });
 
-    it('should validate message format before routing', async () => {
+    it('should validate message format before routing', (done) => {
       // Arrange
+      const validToken = jwt.sign(
+        { userId: 'user-123', steamId: 'steam-456', tier: 'starter' },
+        JWT_SECRET
+      );
+      
       const invalidMessage = {
-        // Missing required fields
+        // Missing required fields (no characterId, no message)
         type: 'CHARACTER_CHAT'
       };
-      let errorReceived = false;
       
       // Act
-      // await connectWithValidToken();
-      // clientSocket.emit('CHARACTER_CHAT', invalidMessage);
-      // clientSocket.on('ERROR', () => errorReceived = true);
+      clientSocket = ioClient(`http://localhost:${TEST_PORT}`, {
+        auth: { token: validToken }
+      });
       
-      // Assert
-      expect(true).toBe(false); // Force fail - RED PHASE
-      // expect(errorReceived).toBe(true);
+      clientSocket.on('connect', () => {
+        clientSocket!.emit('CHARACTER_CHAT', invalidMessage, (ack: any) => {
+          // Assert - should receive error in acknowledgment
+          expect(ack.error).toBe('Invalid message format');
+          expect(ack.code).toBe('INVALID_FORMAT');
+        });
+      });
+      
+      clientSocket.on('ERROR', (err: any) => {
+        expect(err.error).toBe('Invalid message format');
+        expect(err.code).toBe('INVALID_FORMAT');
+        done();
+      });
+      
+      clientSocket.on('connect_error', (err: any) => {
+        done.fail(`Connection failed: ${err.message}`);
+      });
     });
 
     it('should send acknowledgment for received messages', async () => {
