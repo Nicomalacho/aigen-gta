@@ -179,24 +179,38 @@ describe('WebSocket Server', () => {
       });
     });
 
-    it('should send acknowledgment for received messages', async () => {
+    it('should send acknowledgment for received messages', (done) => {
       // Arrange
+      const validToken = jwt.sign(
+        { userId: 'user-123', steamId: 'steam-456', tier: 'starter' },
+        JWT_SECRET
+      );
+      
       const message = {
-        type: 'TEST',
+        type: 'CHARACTER_CHAT',
+        characterId: 'char-123',
+        message: 'Hello!',
         messageId: 'msg-123'
       };
-      let ackReceived = false;
       
       // Act
-      // await connectWithValidToken();
-      // clientSocket.emit('TEST', message, (ack) => {
-      //   ackReceived = true;
-      //   expect(ack.messageId).toBe('msg-123');
-      // });
+      clientSocket = ioClient(`http://localhost:${TEST_PORT}`, {
+        auth: { token: validToken }
+      });
       
-      // Assert
-      expect(true).toBe(false); // Force fail - RED PHASE
-      // expect(ackReceived).toBe(true);
+      clientSocket.on('connect', () => {
+        clientSocket!.emit('CHARACTER_CHAT', message, (ack: any) => {
+          // Assert
+          expect(ack.received).toBe(true);
+          expect(ack.messageId).toBe('msg-123');
+          expect(ack.timestamp).toBeDefined();
+          done();
+        });
+      });
+      
+      clientSocket.on('connect_error', (err: any) => {
+        done.fail(`Connection failed: ${err.message}`);
+      });
     });
   });
 
