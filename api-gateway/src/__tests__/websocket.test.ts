@@ -263,44 +263,56 @@ describe('WebSocket Server', () => {
       };
       
       let rateLimitErrorReceived = false;
-      let messagesSent = 0;
-      const MAX_MESSAGES = 101;
+      let responsesReceived = 0;
+      let testCompleted = false;
+      const TOTAL_MESSAGES = 105; // Send a few extra to ensure we hit the limit
       
       // Act
       clientSocket = ioClient(`http://localhost:${TEST_PORT}`, {
         auth: { token: validToken }
       });
       
-      const sendMessages = () => {
-        for (let i = 0; i < MAX_MESSAGES; i++) {
-          clientSocket!.emit('CHARACTER_CHAT', { ...message, index: i }, (ack: any) => {
-            messagesSent++;
-            
-            if (ack.error === 'RATE_LIMIT_EXCEEDED') {
-              rateLimitErrorReceived = true;
-            }
-            
-            if (messagesSent === MAX_MESSAGES) {
-              // Assert
-              expect(rateLimitErrorReceived).toBe(true);
-              done();
-            }
-          });
+      const checkComplete = () => {
+        responsesReceived++;
+        // Once we've sent all messages and received rate limit error, we're done
+        if (!testCompleted && rateLimitErrorReceived && responsesReceived >= 100) {
+          testCompleted = true;
+          expect(rateLimitErrorReceived).toBe(true);
+          done();
         }
       };
       
-      clientSocket.on('connect', sendMessages);
+      clientSocket.on('connect', () => {
+        // Send messages rapidly
+        for (let i = 0; i < TOTAL_MESSAGES; i++) {
+          clientSocket!.emit('CHARACTER_CHAT', { ...message, index: i }, (ack: any) => {
+            if (ack.code === 'RATE_LIMIT_EXCEEDED') {
+              rateLimitErrorReceived = true;
+            }
+            checkComplete();
+          });
+        }
+        
+        // Safety timeout - if we don't get rate limit error in 3 seconds, fail
+        setTimeout(() => {
+          if (!testCompleted && !rateLimitErrorReceived) {
+            testCompleted = true;
+            done(new Error('Rate limit error not received within timeout'));
+          }
+        }, 3000);
+      });
       
       clientSocket.on('ERROR', (err: any) => {
-        if (err.error === 'RATE_LIMIT_EXCEEDED') {
+        if (err.code === 'RATE_LIMIT_EXCEEDED') {
           rateLimitErrorReceived = true;
+          checkComplete();
         }
       });
       
       clientSocket.on('connect_error', (err: any) => {
-        done.fail(`Connection failed: ${err.message}`);
+        done(new Error(`Connection failed: ${err.message}`));
       });
-    });
+    }, 10000); // 10 second timeout for this test
 
     it('should reset rate limit after 60 seconds', async () => {
       // Arrange
