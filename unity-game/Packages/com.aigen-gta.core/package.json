@@ -1,0 +1,20 @@
+{
+  "name": "com.aigen-gta.core",
+  "version": "0.1.0",
+  "displayName": "AI Agent GTA - Core",
+  "description": "Core networking and game systems for AI Agent GTA",
+  "unity": "2022.3",
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  },
+  "keywords": [
+    "networking",
+    "websocket",
+    "ai",
+    "game"
+  ],
+  "author": {
+    "name": "AI Agent GTA Team",
+    "email": "dev@aigen-gta.com"
+  }
+}
